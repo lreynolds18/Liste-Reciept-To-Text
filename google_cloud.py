@@ -5,10 +5,14 @@ import os
 from google.cloud import vision
 from google.cloud.vision import types
 
-def in_bounds(vertices, limits):
-  bot = (vertices[0].y + vertices[1].y) / 2
-  top = (vertices[2].y + vertices[3].y) / 2
-  return (bot >= (limits[0] - 10) and bot <= (limits[0] + 10)) or (top >= (limits[1] - 10) and top <= (limits[1] + 10))
+def in_bounds(vertices, prev_x, prev_y, slope, residual):
+  if (vertices[0].x - prev_x) != 0:
+    s = abs((vertices[0].y - prev_y) / (vertices[0].x - prev_x))
+    slope = abs(slope)
+
+    return s >= (slope - residual) and s <= (slope + residual)
+  else:
+    return True
 
 def main():
   # Instantiates a client
@@ -60,54 +64,20 @@ def main():
   print((obj.bounding_poly.vertices[2].y - obj.bounding_poly.vertices[3].y) / (obj.bounding_poly.vertices[2].x - obj.bounding_poly.vertices[3].x))
 
   out = []
-  bounds = []
+  prev_x = 0
+  prev_y = 0
   for obj in response.text_annotations:
-    if len(bounds) > 0 and in_bounds(obj.bounding_poly.vertices, bounds[-1]):
+    if len(out) > 0 and in_bounds(obj.bounding_poly.vertices, prev_x, prev_y, slope, 0.2):
       out[-1] += " " + obj.description
     else:
       out.append(obj.description)
-      bounds.append(((obj.bounding_poly.vertices[0].y+obj.bounding_poly.vertices[1].y)/2, (obj.bounding_poly.vertices[2].y+obj.bounding_poly.vertices[3].y)/2))
+      prev_x = obj.bounding_poly.vertices[0].x
+      prev_y = obj.bounding_poly.vertices[0].y 
+    print(prev_x, prev_y)
+
 
   for line in out:
     print("|" + line + "|")
-
-
-"""
-document = response.full_text_annotation
-
-
-breaks = vision.enums.TextAnnotation.DetectedBreak.BreakType
-paragraphs = []
-lines = []
-
-for page in document.pages:
-  for block in page.blocks:
-    for paragraph in block.paragraphs:
-      para = ""
-      line = ""
-      for word in paragraph.words:
-        for symbol in word.symbols:
-          line += symbol.text
-          if symbol.property.detected_break.type == breaks.SPACE:
-            line += ' '
-          if symbol.property.detected_break.type == breaks.EOL_SURE_SPACE:
-            line += ' '
-            lines.append(line)
-            para += line
-            line = ''
-          if symbol.property.detected_break.type == breaks.LINE_BREAK:
-            lines.append(line)
-            para += line
-            line = ''
-      paragraphs.append(para)
-
-for p in paragraphs:
-  print(p)
-
-print()
-for l in lines:
-  print(l)
-"""
 
 
 if __name__ == "__main__":
