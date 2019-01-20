@@ -1,34 +1,76 @@
-import io
-import os
+#!/bin/python3
+
+import io, os
 
 # Imports the Google Cloud client library
 from google.cloud import vision
 from google.cloud.vision import types
 
-def in_bounds(vertices, prev_x, prev_y, slope, residual):
-  if (vertices[0].x - prev_x) != 0:
-    s = abs((vertices[0].y - prev_y) / (vertices[0].x - prev_x))
-    slope = abs(slope)
+def calc_slope(objA, objB):
+  # calculate slope (y1 - y2) / (x1 - x2)
+  # TODO: how to handle divs by zero, absolute value
 
-    return s >= (slope - residual) and s <= (slope + residual)
-  else:
-    return True
+  s = 0
+  if (objA.bounding_poly.vertices[0].x - objB.bounding_poly.vertices[0].x) != 0:
+    s = (objA.bounding_poly.vertices[0].y - objB.bounding_poly.vertices[0].y) / \
+        (objA.bounding_poly.vertices[0].x - objB.bounding_poly.vertices[0].x)
+  return s
+
+def in_bounds(new_slope, old_slope, residual=0.20):
+    new_slope = abs(new_slope)
+    old_slope = abs(old_slope)
+    return new_slope >= (old_slope - residual) \
+      and new_slope <= (old_slope + residual)
+
+def calc_slope_of_reciept(text_annotations):
+  # use * to calculate the slope of the text in a reciept
+  # we want to use the slope to find which text is on the same line
+
+  line = []
+  # grab a line of *'s
+  for obj in text_annotations:
+    if obj.description != "*" and len(line) != 0:
+      break
+    elif obj.description == "*":
+      line.append(obj)
+
+  return calc_slope(line[0], line[-1])
+
+
+def assemble_lines(text_annotations, slope):
+  out = [[text_annotations[0]]]
+
+  for obj in text_annotations[1:]:
+    if obj.description != "*":
+      for i in range(len(out)-1, -1, -1):
+        s = calc_slope(obj, out[i][0])
+        if in_bounds(s, slope):
+          out[i].append(obj)
+        else:
+          out.append([obj])
+
+  return out
+
+def print_lines(objs):
+  for line_list in objs:
+    for line in line_list:
+      print(line.description, end='')
 
 def main():
   # Instantiates a client
   client = vision.ImageAnnotatorClient()
 
   # The name of the image file to annotate
-  """
-  file_name = os.path.join(
-    os.path.dirname(__file__),
-    'test-images/dickssportinggoods.jpg')
 
-  """
 
   file_name = os.path.join(
     os.path.dirname(__file__),
-    'test-images/krogers.jpg')
+    # 'test-images/krogers.jpg'
+    # 'test-images/dickssportinggoods.jpg'
+    'test-images/gianteagle.jpg'
+    # 'test-images/target.jpg'
+    # 'test-images/homedepot.jpg'
+    )
 
   # Loads the image into memory
   with io.open(file_name, 'rb') as image_file:
@@ -38,46 +80,12 @@ def main():
 
   response = client.document_text_detection(image=image)
   document = response.text_annotations
-
+  
+  # slope = calc_slope_of_reciept(response.text_annotations)
+  # print(slope)
   slope = 0
-  pointA = 0
-  pointB = 0
-  pointC = 0
-  pointD = 0
-  for obj in response.text_annotations:
-    if obj.description == "9700":
-      pointA = obj
-    elif obj.description == "CIRCLE":
-      pointB = obj
-    elif obj.description == "MSSN":
-      pointC = obj
-    elif obj.description == "CHIPS":
-      pointD = obj
-
-  slope = (pointA.bounding_poly.vertices[0].y - pointB.bounding_poly.vertices[0].y) / (pointA.bounding_poly.vertices[0].x - pointB.bounding_poly.vertices[0].x)
-  print(slope)
-
-  slope = (pointC.bounding_poly.vertices[0].y - pointD.bounding_poly.vertices[0].y) / (pointC.bounding_poly.vertices[0].x - pointD.bounding_poly.vertices[0].x)
-  print(slope)
-
-  print((obj.bounding_poly.vertices[0].y - obj.bounding_poly.vertices[1].y) / (obj.bounding_poly.vertices[0].x - obj.bounding_poly.vertices[1].x))
-  print((obj.bounding_poly.vertices[2].y - obj.bounding_poly.vertices[3].y) / (obj.bounding_poly.vertices[2].x - obj.bounding_poly.vertices[3].x))
-
-  out = []
-  prev_x = 0
-  prev_y = 0
-  for obj in response.text_annotations:
-    if len(out) > 0 and in_bounds(obj.bounding_poly.vertices, prev_x, prev_y, slope, 0.2):
-      out[-1] += " " + obj.description
-    else:
-      out.append(obj.description)
-      prev_x = obj.bounding_poly.vertices[0].x
-      prev_y = obj.bounding_poly.vertices[0].y 
-    print(prev_x, prev_y)
-
-
-  for line in out:
-    print("|" + line + "|")
+  lines = assemble_lines(response.text_annotations, slope)
+  print_lines(lines)
 
 
 if __name__ == "__main__":
